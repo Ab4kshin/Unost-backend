@@ -19,9 +19,9 @@ class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     full_name = db.Column(db.String(200), nullable=False)
-    student_id = db.Column(db.String(20), unique=True)  # номер студенческого
-    group_id = db.Column(db.Integer, db.ForeignKey('group.id'))
+    birth_date = db.Column(db.Date)  # ← ДОБАВЬ ЭТО ПОЛЕ
     phone = db.Column(db.String(20))
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'))
     
     user = db.relationship('User', backref='student')
     group = db.relationship('Group', backref='students')

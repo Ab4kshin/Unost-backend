@@ -2,8 +2,9 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity
 from models import db, User, Student, Grade, Group
 from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 
-# Blueprints для организации маршрутов
+# Правильное определение Blueprint
 auth_routes = Blueprint('auth', __name__)
 student_routes = Blueprint('students', __name__)
 
@@ -23,6 +24,65 @@ def login():
     
     return jsonify({'error': 'Invalid credentials'}), 401
 
+# Регистрация
+@auth_routes.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    
+    # Проверяем, что пользователь с таким email не существует
+    if User.query.filter_by(email=data.get('email')).first():
+        return jsonify({'error': 'Пользователь с таким email уже существует'}), 400
+    
+    # Создаем пользователя
+    user = User(
+        email=data.get('email'),
+        role='student'
+    )
+    user.set_password(data.get('password'))
+    
+    db.session.add(user)
+    db.session.flush()  # Получаем ID пользователя
+    
+    # Находим или создаем группу
+    group_name = data.get('group')
+    group = Group.query.filter_by(name=group_name).first()
+    if not group:
+        group = Group(name=group_name)
+        db.session.add(group)
+        db.session.flush()
+    
+    # Создаем студента
+    student = Student(
+        user_id=user.id,
+        full_name=data.get('full_name'),
+        phone=data.get('phone'),
+        group_id=group.id
+    )
+    
+    # Парсим дату рождения
+    if data.get('birth_date'):
+        try:
+            student.birth_date = datetime.strptime(data.get('birth_date'), '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    
+    db.session.add(student)
+    db.session.commit()
+    
+    # Создаем токен
+    access_token = create_access_token(identity=user.id)
+    
+    return jsonify({
+        'token': access_token,
+        'user': {
+            'id': user.id,
+            'email': user.email,
+            'role': user.role,
+            'full_name': student.full_name,
+            'group': group.name
+        }
+    }), 201
+
 # Получить всех студентов
 @student_routes.route('/api/students', methods=['GET'])
 @jwt_required()
@@ -31,7 +91,6 @@ def get_students():
     return jsonify([{
         'id': s.id,
         'name': s.full_name,
-        'student_id': s.student_id,
         'group': s.group.name if s.group else None
     } for s in students])
 
@@ -43,7 +102,6 @@ def get_student(student_id):
     return jsonify({
         'id': student.id,
         'name': student.full_name,
-        'student_id': student.student_id,
         'group': student.group.name if student.group else None,
         'grades': [{
             'subject': g.subject,
@@ -52,7 +110,56 @@ def get_student(student_id):
         } for g in student.grades]
     })
 
+# Получить профиль студента
+@student_routes.route('/api/students/profile', methods=['GET'])
+@jwt_required()
+def get_profile():
+    user_id = get_jwt_identity()
+    student = Student.query.filter_by(user_id=user_id).first_or_404()
+    
+    return jsonify({
+        'id': student.id,
+        'full_name': student.full_name,
+        'email': student.user.email,
+        'phone': student.phone,
+        'group': student.group.name if student.group else None
+    })
+
 # Тестовый маршрут
 @student_routes.route('/api/test', methods=['GET'])
 def test():
     return jsonify({'message': 'Backend работает!'})
+
+# Получить профиль студента
+@student_routes.route('/api/students/profile', methods=['GET'])
+@jwt_required()
+def get_profile():
+    user_id = get_jwt_identity()
+    student = Student.query.filter_by(user_id=user_id).first_or_404()
+    
+    return jsonify({
+        'id': student.id,
+        'full_name': student.full_name,
+        'email': student.user.email,
+        'phone': student.phone,
+        'birth_date': student.birth_date.isoformat() if student.birth_date else None,
+        'group': student.group.name if student.group else None,
+        'group_id': student.group_id,
+        'user_id': student.user_id
+    })
+
+# Добавьте этот маршрут в конец файла routes.py
+
+# Корневой маршрут
+@auth_routes.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        'message': 'UNOST Backend is running!', 
+        'status': 'OK',
+        'endpoints': {
+            'login': '/api/login',
+            'register': '/api/register',
+            'students': '/api/students',
+            'test': '/api/test'
+        }
+    })

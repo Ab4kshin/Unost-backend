@@ -1,8 +1,20 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity
-from models import db, User, Student, Grade, Group
+from models import db, User, Student, Grade, Group, PortfolioFile
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+import os
+import uuid
+from werkzeug.utils import secure_filename
+
+# Настройки для загрузки файлов
+UPLOAD_FOLDER = 'uploads/portfolio'
+ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 auth_routes = Blueprint('auth', __name__)
 student_routes = Blueprint('students', __name__)
@@ -20,7 +32,6 @@ def login():
         user = User.query.filter_by(email=data.get('email')).first()
         
         if user and check_password_hash(user.password_hash, data.get('password')):
-            # ИСПРАВЛЕНИЕ: преобразуем user.id в строку
             access_token = create_access_token(identity=str(user.id))
             print(f"Login successful for user {user.id}, token created")
             return jsonify({
@@ -41,19 +52,16 @@ def login():
 def register():
     try:
         data = request.get_json()
-        print("Registration attempt:", data.get('email'))  # Отладка
+        print("Registration attempt:", data.get('email'))
         
-        # Валидация обязательных полей
         required_fields = ['email', 'password', 'full_name', 'phone', 'birth_date', 'group']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'Поле {field} обязательно'}), 400
         
-        # Проверяем, что пользователь с таким email не существует
         if User.query.filter_by(email=data.get('email')).first():
             return jsonify({'error': 'Пользователь с таким email уже существует'}), 400
         
-        # Создаем пользователя
         user = User(
             email=data.get('email'),
             role='student'
@@ -62,18 +70,16 @@ def register():
         
         db.session.add(user)
         db.session.flush()
-        print(f"User created with ID: {user.id}")  # Отладка
+        print(f"User created with ID: {user.id}")
     
-        # Находим или создаем группу
         group_name = data.get('group')
         group = Group.query.filter_by(name=group_name).first()
         if not group:
             group = Group(name=group_name)
             db.session.add(group)
             db.session.flush()
-            print(f"Group created: {group_name}")  # Отладка
+            print(f"Group created: {group_name}")
         
-        # Создаем студента
         student = Student(
             user_id=user.id,
             full_name=data.get('full_name'),
@@ -81,7 +87,6 @@ def register():
             group_id=group.id
         )
         
-        # Парсим дату рождения
         if data.get('birth_date'):
             try:
                 student.birth_date = datetime.strptime(data.get('birth_date'), '%Y-%m-%d').date()
@@ -91,9 +96,8 @@ def register():
         db.session.add(student)
         db.session.commit()
         
-        # Создаем токен - ИСПРАВЛЕНИЕ: преобразуем user.id в строку
         access_token = create_access_token(identity=str(user.id))
-        print(f"Registration successful, token created for user {user.id}")  # Отладка
+        print(f"Registration successful, token created for user {user.id}")
         
         return jsonify({
             'token': access_token,
@@ -108,7 +112,7 @@ def register():
         
     except Exception as e:
         db.session.rollback()
-        print(f"Registration error: {str(e)}")  # Отладка
+        print(f"Registration error: {str(e)}")
         return jsonify({'error': f'Ошибка регистрации: {str(e)}'}), 500
 
 # Получить профиль студента
@@ -117,16 +121,15 @@ def register():
 def get_profile():
     try:
         user_id = get_jwt_identity()
-        print(f"Profile request for user_id: {user_id}")  # Отладка
+        print(f"Profile request for user_id: {user_id}")
         
-        # ИСПРАВЛЕНИЕ: преобразуем строку обратно в int для поиска в базе
         student = Student.query.filter_by(user_id=int(user_id)).first()
         
         if not student:
-            print(f"Student not found for user_id: {user_id}")  # Отладка
+            print(f"Student not found for user_id: {user_id}")
             return jsonify({'error': 'Профиль студента не найден'}), 404
         
-        print(f"Profile found for: {student.full_name}")  # Отладка
+        print(f"Profile found for: {student.full_name}")
         return jsonify({
             'id': student.id,
             'full_name': student.full_name,
@@ -138,7 +141,7 @@ def get_profile():
             'user_id': student.user_id
         })
     except Exception as e:
-        print(f"Profile error: {str(e)}")  # Отладка
+        print(f"Profile error: {str(e)}")
         return jsonify({'error': f'Ошибка загрузки профиля: {str(e)}'}), 500
 
 # Тестовый маршрут для проверки JWT
@@ -163,7 +166,7 @@ def root():
         }
     })
 
-# Эндпоинт для отладки JWT - проверяет токен без требований к базе
+# Эндпоинт для отладки JWT
 @auth_routes.route('/api/debug-token', methods=['POST'])
 def debug_token():
     try:
@@ -174,7 +177,6 @@ def debug_token():
         if not token:
             return jsonify({'error': 'Токен не предоставлен'}), 400
         
-        # Пытаемся декодировать токен
         from flask_jwt_extended import decode_token
         try:
             decoded = decode_token(token)
@@ -192,3 +194,118 @@ def debug_token():
             
     except Exception as e:
         return jsonify({'error': f'Ошибка отладки: {str(e)}'}), 500
+
+# Маршруты для портфолио
+@student_routes.route('/api/students/portfolio', methods=['GET'])
+@jwt_required()
+def get_portfolio_files():
+    try:
+        current_user_id = get_jwt_identity()
+        student = Student.query.filter_by(user_id=int(current_user_id)).first()
+        
+        if not student:
+            return jsonify({'error': 'Студент не найден'}), 404
+        
+        portfolio_files = PortfolioFile.query.filter_by(student_id=student.id).all()
+        return jsonify([file.to_dict() for file in portfolio_files])
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@student_routes.route('/api/students/portfolio', methods=['POST'])
+@jwt_required()
+def upload_portfolio_file():
+    try:
+        current_user_id = get_jwt_identity()
+        student = Student.query.filter_by(user_id=int(current_user_id)).first()
+        
+        if not student:
+            return jsonify({'error': 'Студент не найден'}), 404
+        
+        if 'file' not in request.files:
+            return jsonify({'error': 'Файл не найден'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'Файл не выбран'}), 400
+        
+        if file and allowed_file(file.filename):
+            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+            
+            file_id = str(uuid.uuid4())
+            original_filename = secure_filename(file.filename)
+            file_extension = original_filename.rsplit('.', 1)[1].lower()
+            saved_filename = f"{file_id}.{file_extension}"
+            
+            file_path = os.path.join(UPLOAD_FOLDER, saved_filename)
+            file.save(file_path)
+            
+            portfolio_file = PortfolioFile(
+                filename=original_filename,
+                saved_filename=saved_filename,
+                file_size=os.path.getsize(file_path),
+                student_id=student.id
+            )
+            
+            db.session.add(portfolio_file)
+            db.session.commit()
+            
+            return jsonify(portfolio_file.to_dict()), 201
+        
+        return jsonify({'error': 'Недопустимый тип файла'}), 400
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@student_routes.route('/api/students/portfolio/<int:file_id>/download', methods=['GET'])
+@jwt_required()
+def download_portfolio_file(file_id):
+    try:
+        current_user_id = get_jwt_identity()
+        student = Student.query.filter_by(user_id=int(current_user_id)).first()
+        
+        if not student:
+            return jsonify({'error': 'Студент не найден'}), 404
+        
+        portfolio_file = PortfolioFile.query.filter_by(id=file_id, student_id=student.id).first()
+        
+        if not portfolio_file:
+            return jsonify({'error': 'Файл не найден'}), 404
+        
+        file_path = os.path.join(UPLOAD_FOLDER, portfolio_file.saved_filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Файл не найден на сервере'}), 404
+        
+        return send_file(file_path, as_attachment=True, download_name=portfolio_file.filename)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@student_routes.route('/api/students/portfolio/<int:file_id>', methods=['DELETE'])
+@jwt_required()
+def delete_portfolio_file(file_id):
+    try:
+        current_user_id = get_jwt_identity()
+        student = Student.query.filter_by(user_id=int(current_user_id)).first()
+        
+        if not student:
+            return jsonify({'error': 'Студент не найден'}), 404
+        
+        portfolio_file = PortfolioFile.query.filter_by(id=file_id, student_id=student.id).first()
+        
+        if not portfolio_file:
+            return jsonify({'error': 'Файл не найден'}), 404
+        
+        file_path = os.path.join(UPLOAD_FOLDER, portfolio_file.saved_filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        db.session.delete(portfolio_file)
+        db.session.commit()
+        
+        return jsonify({'message': 'Файл удален'}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

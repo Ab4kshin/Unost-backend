@@ -1,17 +1,15 @@
 from app import app, db
-from models import User, Group  # Добавь импорт Group
+from models import User, Group, PortfolioFile
 from datetime import datetime
 
 def init_test_data():
     """Инициализация тестовых данных"""
-    # Создаем тестового администратора если его нет
     if not User.query.filter_by(email='admin@college.ru').first():
         admin = User(email='admin@college.ru', role='admin')
         admin.set_password('admin123')
         db.session.add(admin)
-        print('Создан тестовый пользователь: admin@college.ru / admin123')
+        print('✅ Создан тестовый пользователь: admin@college.ru / admin123')
 
-    # Создаем тестовые группы если их нет
     groups_data = [
         'ТМ-1417', 'МЦМ-Пф-102', 'ТИК-112', 'ИСП-1308', 'СП-Пф-1603', 
         'ТЭиРП-1901', 'ТАКХС-Пф-1202', 'ИСП-1309п', 'ТОиРА-1701п', 
@@ -31,24 +29,22 @@ def init_test_data():
         if not Group.query.filter_by(name=group_name).first():
             group = Group(name=group_name)
             db.session.add(group)
-            print(f'Создана группа: {group_name}')
+            print(f'✅ Создана группа: {group_name}')
 
 if __name__ == '__main__':
     with app.app_context():
         try:
-            # Создаем таблицы в базе данных
             db.create_all()
-            print("Таблицы базы данных созданы/проверены")
+            print("✅ Таблицы базы данных созданы/проверены")
+            print("✅ Включая таблицу PortfolioFile для портфолио")
             
-            # Инициализируем тестовые данные
             init_test_data()
             db.session.commit()
-            print("Тестовые данные инициализированы")
+            print("✅ Тестовые данные инициализированы")
             
         except Exception as e:
             db.session.rollback()
-            print(f"Ошибка при инициализации базы данных: {e}")
+            print(f"❌ Ошибка при инициализации базы данных: {e}")
     
-    # Запускаем сервер
-    print("Запуск сервера на http://localhost:5000")
+    print("🚀 Запуск сервера на http://localhost:5000")
     app.run(debug=True, host='0.0.0.0', port=5000)

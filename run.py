@@ -1,5 +1,7 @@
-from app import app, db
-from models import User, Group, PortfolioFile
+# run.py
+from app import app
+from extensions import db  # Изменено: импорт из extensions
+from models import User, Group, PortfolioFile, Complaint
 from datetime import datetime
 
 def init_test_data():
@@ -34,9 +36,13 @@ def init_test_data():
 if __name__ == '__main__':
     with app.app_context():
         try:
+            # Импортируем все модели для создания таблиц
+            from models import User, Student, Group, Grade, PortfolioFile, Complaint
+            
             db.create_all()
             print("✅ Таблицы базы данных созданы/проверены")
             print("✅ Включая таблицу PortfolioFile для портфолио")
+            print("✅ Включая таблицу Complaint для жалоб")
             
             init_test_data()
             db.session.commit()

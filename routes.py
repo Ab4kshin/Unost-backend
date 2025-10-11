@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity
-from models import db, User, Student, Grade, Group, PortfolioFile
+from extensions import db
+from models import User, Student, Grade, Group, PortfolioFile, Complaint
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import uuid
 from werkzeug.utils import secure_filename
@@ -18,6 +19,7 @@ def allowed_file(filename):
 
 auth_routes = Blueprint('auth', __name__)
 student_routes = Blueprint('students', __name__)
+complaint_routes = Blueprint('complaints', __name__)
 
 # Аутентификация
 @auth_routes.route('/api/login', methods=['POST'])
@@ -306,6 +308,86 @@ def delete_portfolio_file(file_id):
         db.session.commit()
         
         return jsonify({'message': 'Файл удален'}), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Получить IP адрес пользователя
+def get_client_ip():
+    if request.environ.get('HTTP_X_FORWARDED_FOR'):
+        return request.environ['HTTP_X_FORWARDED_FOR'].split(',')[0]
+    else:
+        return request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
+
+# Эндпоинт для создания жалобы
+@complaint_routes.route('/api/complaints', methods=['POST'])
+def create_complaint():
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('complaint_text'):
+            return jsonify({'error': 'Текст жалобы обязателен'}), 400
+        
+        # Получаем IP и User-Agent
+        ip_address = get_client_ip()
+        user_agent = request.headers.get('User-Agent', 'Не указан')
+        
+        complaint = Complaint(
+            ip_address=ip_address,
+            user_agent=user_agent,
+            complaint_text=data.get('complaint_text')
+        )
+        
+        db.session.add(complaint)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Жалоба успешно отправлена',
+            'complaint_id': complaint.id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при отправке жалобы: {str(e)}'}), 500
+
+# Эндпоинт для получения всех жалоб (только для админов) - ИЗМЕНИЛИ ИМЯ ФУНКЦИИ
+@complaint_routes.route('/api/complaints', methods=['GET'])
+@jwt_required()
+def get_all_complaints():  # Изменили имя функции
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(int(current_user_id))
+        
+        if not user or user.role != 'admin':
+            return jsonify({'error': 'Доступ запрещен'}), 403
+        
+        complaints = Complaint.query.order_by(Complaint.created_at.desc()).all()
+        return jsonify([complaint.to_dict() for complaint in complaints])
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Эндпоинт для получения статистики по жалобам (только для админов)
+@complaint_routes.route('/api/complaints/stats', methods=['GET'])
+@jwt_required()
+def get_complaints_stats():
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(int(current_user_id))
+        
+        if not user or user.role != 'admin':
+            return jsonify({'error': 'Доступ запрещен'}), 403
+        
+        total_complaints = Complaint.query.count()
+        
+        # Жалобы за последние 7 дней
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        recent_complaints = Complaint.query.filter(Complaint.created_at >= week_ago).count()
+        
+        return jsonify({
+            'total_complaints': total_complaints,
+            'recent_complaints': recent_complaints
+        })
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

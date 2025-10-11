@@ -1,4 +1,5 @@
-from app import db
+# models.py
+from extensions import db  # Изменено: импорт из extensions вместо app
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -58,4 +59,20 @@ class PortfolioFile(db.Model):
             'size': self.file_size,
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
             'student_id': self.student_id
+        }
+
+class Complaint(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(45), nullable=False)
+    user_agent = db.Column(db.Text, nullable=False)
+    complaint_text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'ip_address': self.ip_address,
+            'user_agent': self.user_agent,
+            'complaint_text': self.complaint_text,
+            'created_at': self.created_at.isoformat() if self.created_at else None
         }

@@ -1,16 +1,11 @@
+# app.py
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_jwt_extended import JWTManager
 from flask_cors import CORS
-from flask_migrate import Migrate
 import os
 from dotenv import load_dotenv
+from extensions import db, jwt, migrate  # Изменено: импорт из extensions
 
 load_dotenv()
-
-db = SQLAlchemy()
-migrate = Migrate()
-jwt = JWTManager()
 
 def create_app():
     app = Flask(__name__)
@@ -31,6 +26,7 @@ def create_app():
     print(f"JWT_SECRET_KEY: {app.config['JWT_SECRET_KEY']}")
     print(f"SECRET_KEY: {app.config['SECRET_KEY']}")
     
+    # Инициализация расширений
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
@@ -46,14 +42,13 @@ def create_app():
     os.makedirs(uploads_dir, exist_ok=True)
     print(f"✅ Папка для загрузок создана: {uploads_dir}")
     
-    from routes import auth_routes, student_routes
+    from routes import auth_routes, student_routes, complaint_routes
     app.register_blueprint(auth_routes)
     app.register_blueprint(student_routes)
+    app.register_blueprint(complaint_routes)
     
     return app
 
 app = create_app()
 
-with app.app_context():
-    from models import User, Student, Group, Grade, PortfolioFile
-    db.create_all()
+# Убрали импорт моделей здесь, перенесем в run.py

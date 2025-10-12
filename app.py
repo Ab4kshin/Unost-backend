@@ -32,7 +32,7 @@ def create_app():
     jwt.init_app(app)
     
     CORS(app, 
-         origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+         origins=["http://юность.панксквад.рф", "https://юность.панксквад.рф", "http://localhost:5173", "http://127.0.0.1:5173"],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
          allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Headers"],
          supports_credentials=True)

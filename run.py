@@ -1,7 +1,7 @@
 # run.py
 from app import app
-from extensions import db  # Изменено: импорт из extensions
-from models import User, Group, PortfolioFile, Complaint
+from extensions import db
+from models import User, Group, PortfolioFile, Complaint, Feedback
 from datetime import datetime
 
 def init_test_data():
@@ -37,12 +37,17 @@ if __name__ == '__main__':
     with app.app_context():
         try:
             # Импортируем все модели для создания таблиц
-            from models import User, Student, Group, Grade, PortfolioFile, Complaint
+            from models import User, Student, Group, Grade, PortfolioFile, Complaint, Feedback
             
+            # Принудительно удаляем и создаем все таблицы
+            print("🔄 Удаление старых таблиц...")
+            db.drop_all()
+            print("🔄 Создание новых таблиц...")
             db.create_all()
-            print("✅ Таблицы базы данных созданы/проверены")
+            print("✅ Все таблицы базы данных пересозданы")
             print("✅ Включая таблицу PortfolioFile для портфолио")
             print("✅ Включая таблицу Complaint для жалоб")
+            print("✅ Включая таблицу Feedback для обратной связи")
             
             init_test_data()
             db.session.commit()
@@ -51,6 +56,8 @@ if __name__ == '__main__':
         except Exception as e:
             db.session.rollback()
             print(f"❌ Ошибка при инициализации базы данных: {e}")
+            import traceback
+            traceback.print_exc()
     
     print("🚀 Запуск сервера на http://localhost:5000")
     app.run(debug=True, host='0.0.0.0', port=5000)

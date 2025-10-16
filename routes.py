@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, create_access_token, get_jwt_identity
 from extensions import db
-from models import User, Student, Grade, Group, PortfolioFile, Complaint
+from models import User, Student, Grade, Group, PortfolioFile, Complaint, Feedback
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 import os
@@ -20,6 +20,7 @@ def allowed_file(filename):
 auth_routes = Blueprint('auth', __name__)
 student_routes = Blueprint('students', __name__)
 complaint_routes = Blueprint('complaints', __name__)
+feedback_routes = Blueprint('feedback', __name__)
 
 # Аутентификация
 @auth_routes.route('/api/login', methods=['POST'])
@@ -116,6 +117,24 @@ def register():
         db.session.rollback()
         print(f"Registration error: {str(e)}")
         return jsonify({'error': f'Ошибка регистрации: {str(e)}'}), 500
+    
+# В routes.py, в раздел аутентификации добавьте:
+@auth_routes.route('/api/', methods=['GET'])
+def api_root():
+    return jsonify({
+        'message': 'UNOST Backend API is running!', 
+        'status': 'OK',
+        'endpoints': {
+            'login': '/api/login',
+            'register': '/api/register',
+            'students': '/api/students',
+            'complaints': '/api/complaints',
+            'feedback': '/api/feedback',
+            'check-token': '/api/check-token'
+        }
+    })
+
+
 
 # Получить профиль студента
 @student_routes.route('/api/students/profile', methods=['GET'])
@@ -350,10 +369,10 @@ def create_complaint():
         db.session.rollback()
         return jsonify({'error': f'Ошибка при отправке жалобы: {str(e)}'}), 500
 
-# Эндпоинт для получения всех жалоб (только для админов) - ИЗМЕНИЛИ ИМЯ ФУНКЦИИ
+# Эндпоинт для получения всех жалоб (только для админов)
 @complaint_routes.route('/api/complaints', methods=['GET'])
 @jwt_required()
-def get_all_complaints():  # Изменили имя функции
+def get_all_complaints():
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(int(current_user_id))
@@ -387,6 +406,81 @@ def get_complaints_stats():
         return jsonify({
             'total_complaints': total_complaints,
             'recent_complaints': recent_complaints
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Эндпоинт для создания обратной связи
+@feedback_routes.route('/api/feedback', methods=['POST'])
+def create_feedback():
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('name') or not data.get('email') or not data.get('message'):
+            return jsonify({'error': 'Все поля обязательны для заполнения'}), 400
+        
+        # Получаем IP и User-Agent
+        ip_address = get_client_ip()
+        user_agent = request.headers.get('User-Agent', 'Не указан')
+        
+        feedback = Feedback(
+            name=data.get('name'),
+            email=data.get('email'),
+            message=data.get('message'),
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
+        db.session.add(feedback)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Форма обратной связи успешно отправлена',
+            'feedback_id': feedback.id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка при отправке формы: {str(e)}'}), 500
+
+# Эндпоинт для получения всех форм обратной связи (только для админов)
+@feedback_routes.route('/api/feedback', methods=['GET'])
+@jwt_required()
+def get_all_feedback():
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(int(current_user_id))
+        
+        if not user or user.role != 'admin':
+            return jsonify({'error': 'Доступ запрещен'}), 403
+        
+        feedback_list = Feedback.query.order_by(Feedback.created_at.desc()).all()
+        return jsonify([feedback.to_dict() for feedback in feedback_list])
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Эндпоинт для получения статистики по обратной связи (только для админов)
+@feedback_routes.route('/api/feedback/stats', methods=['GET'])
+@jwt_required()
+def get_feedback_stats():
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(int(current_user_id))
+        
+        if not user or user.role != 'admin':
+            return jsonify({'error': 'Доступ запрещен'}), 403
+        
+        total_feedback = Feedback.query.count()
+        
+        # Формы за последние 7 дней
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        recent_feedback = Feedback.query.filter(Feedback.created_at >= week_ago).count()
+        
+        return jsonify({
+            'total_feedback': total_feedback,
+            'recent_feedback': recent_feedback
         })
     
     except Exception as e:

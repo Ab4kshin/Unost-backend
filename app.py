@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
-from extensions import db, jwt, migrate  # Изменено: импорт из extensions
+from extensions import db, jwt, migrate
 
 load_dotenv()
 
@@ -42,13 +42,12 @@ def create_app():
     os.makedirs(uploads_dir, exist_ok=True)
     print(f"✅ Папка для загрузок создана: {uploads_dir}")
     
-    from routes import auth_routes, student_routes, complaint_routes
+    from routes import auth_routes, student_routes, complaint_routes, feedback_routes
     app.register_blueprint(auth_routes)
     app.register_blueprint(student_routes)
     app.register_blueprint(complaint_routes)
+    app.register_blueprint(feedback_routes)
     
     return app
 
 app = create_app()
-
-# Убрали импорт моделей здесь, перенесем в run.py
